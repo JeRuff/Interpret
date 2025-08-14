@@ -1,9 +1,11 @@
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("dagger.hilt.android.plugin")
     kotlin("kapt")
+
+    id("com.android.application")
+    id("kotlin-android")
+    id("kotlin-kapt")
+    id("dagger.hilt.android.plugin")
 }
 
 android {
@@ -44,6 +46,8 @@ android {
     }
 }
 
+apply(plugin = "dagger.hilt.android.plugin")
+
 dependencies {
 
     implementation(libs.androidx.core.ktx)
@@ -65,5 +69,11 @@ dependencies {
     kapt(libs.hilt.compiler)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.android)
-    implementation("com.microsoft.cognitiveservices.speech:client-sdk:1.45.0")
+    implementation(libs.speech.client.sdk)
+
+    implementation(libs.androidx.core)
+
+    implementation("androidx.navigation:navigation-compose:2.6.0")
+    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
+
 }

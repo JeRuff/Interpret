@@ -10,7 +10,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import com.example.interpret.ui.InterpreterScreen
-import hilt.android.AndroidEntryPoint
+import dagger.hilt.android.AndroidEntryPoint
+import android.bluetooth.BluetoothManager
+import android.content.Context
+import dagger.hilt.android.HiltAndroidApp
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -32,8 +35,13 @@ class MainActivity : ComponentActivity() {
             ActivityCompat.requestPermissions(this, permissions, permissionRequestId)
         }
 
+
+
         // Enable Bluetooth if not enabled
-        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        val bluetoothAdapter = bluetoothManager.getAdapter()
+
+        //val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
         if (bluetoothAdapter != null && !bluetoothAdapter.isEnabled) {
             val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
             registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { }.launch(enableBtIntent)
