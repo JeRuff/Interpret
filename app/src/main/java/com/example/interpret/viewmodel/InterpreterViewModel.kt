@@ -25,16 +25,17 @@ class InterpreterViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             try {
-                _status.value = "Starting translation..."
+                _status.value = "Listening for speech..."
                 speechService.startContinuousTranslation(
                     inputLanguage = inputLanguage,
                     outputLanguage1 = outputLanguage1,
                     outputLanguage2 = outputLanguage2,
                     onAudioOutput = { language, audio ->
                         bluetoothService.routeAudioToEarbud(language, audio)
+                        _status.value = "Translating to $language"
                     }
                 )
-                _status.value = "Translation in progress"
+                _status.value = "Translation Active"
             } catch (e: Exception) {
                 _status.value = "Error: ${e.message}"
             }
@@ -44,5 +45,10 @@ class InterpreterViewModel @Inject constructor(
     fun stopTranslation() {
         speechService.stopTranslation()
         _status.value = "Translation stopped"
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopTranslation()
     }
 }

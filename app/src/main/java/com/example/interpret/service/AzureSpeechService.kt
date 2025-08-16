@@ -1,13 +1,13 @@
 package com.example.interpret.service
 
+import com.microsoft.cognitiveservices.speech.PropertyId
+import com.microsoft.cognitiveservices.speech.ResultReason
 import com.microsoft.cognitiveservices.speech.SpeechConfig
 import com.microsoft.cognitiveservices.speech.audio.AudioConfig
-import com.microsoft.cognitiveservices.speech.audio.PullAudioOutputStream
 import com.microsoft.cognitiveservices.speech.translation.SpeechTranslationConfig
 import com.microsoft.cognitiveservices.speech.translation.TranslationRecognizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayInputStream
 import javax.inject.Inject
 
 class AzureSpeechService @Inject constructor(
@@ -27,15 +27,36 @@ class AzureSpeechService @Inject constructor(
             addTargetLanguage(outputLanguage1)
             addTargetLanguage(outputLanguage2)
             voiceName = if (outputLanguage1 == "fr-FR") "fr-FR-DeniseNeural" else "lt-LT-OnaNeural"
+            // Faster utterance detection for real-time
+            setProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "200")
         }
 
         val audioConfig = AudioConfig.fromDefaultMicrophoneInput()
         recognizer = TranslationRecognizer(speechConfig, audioConfig)
 
+        recognizer?.recognizing?.addEventListener { _, event ->
+            if (event.result.reason == ResultReason.RecognizingSpeech) {
+                val originalText = event.result.text ?: ""
+                // Translate only if enough info (3+ words)
+                if (originalText.split(" ").filter { it.isNotBlank() }.size >= 3) {
+                    val translations = event.result.translations
+                    translations.forEach { (lang, text) ->
+                        synthesizeSpeech(text, lang, onAudioOutput)
+                    }
+                }
+            }
+        }
+
         recognizer?.recognized?.addEventListener { _, event ->
-            val translations = event.result.translations
-            translations.forEach { (lang, text) ->
-                synthesizeSpeech(text, lang, onAudioOutput)
+            if (event.result.reason == ResultReason.RecognizedSpeech) {
+                val originalText = event.result.text ?: ""
+                // Translate only if enough info (3+ words)
+                if (originalText.split(" ").filter { it.isNotBlank() }.size >= 3) {
+                    val translations = event.result.translations
+                    translations.forEach { (lang, text) ->
+                        synthesizeSpeech(text, lang, onAudioOutput)
+                    }
+                }
             }
         }
 
@@ -48,7 +69,7 @@ class AzureSpeechService @Inject constructor(
         }
         val synthesizer = com.microsoft.cognitiveservices.speech.SpeechSynthesizer(speechConfig)
         val result = synthesizer.SpeakTextAsync(text).get()
-        if (result.reason == com.microsoft.cognitiveservices.speech.ResultReason.SynthesizingAudioCompleted) {
+        if (result.reason == ResultReason.SynthesizingAudioCompleted) {
             onAudioOutput(language, result.audioData)
         }
         result.close()
