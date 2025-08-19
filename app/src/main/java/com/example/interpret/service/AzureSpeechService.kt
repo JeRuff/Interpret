@@ -1,5 +1,6 @@
 package com.example.interpret.service
 
+import android.util.Log
 import com.microsoft.cognitiveservices.speech.PropertyId
 import com.microsoft.cognitiveservices.speech.ResultReason
 import com.microsoft.cognitiveservices.speech.SpeechConfig
@@ -30,6 +31,9 @@ class AzureSpeechService @Inject constructor(
             // Faster utterance detection for real-time
             setProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "200")
         }
+
+        Log.i("Interpret Service", "Starting translation with input: $inputLanguage, output1: $outputLanguage1, output2: $outputLanguage2");
+
 
         val audioConfig = AudioConfig.fromDefaultMicrophoneInput()
         recognizer = TranslationRecognizer(speechConfig, audioConfig)
