@@ -26,6 +26,6 @@ object AppModule {
     @Provides
     @Singleton
     fun provideBluetoothAudioService(@ApplicationContext context: Context): BluetoothAudioService {
-        return BluetoothAudioService(context)
+        return BluetoothAudioService()
     }
 }

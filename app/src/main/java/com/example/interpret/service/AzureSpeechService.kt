@@ -4,62 +4,126 @@ import android.util.Log
 import com.microsoft.cognitiveservices.speech.PropertyId
 import com.microsoft.cognitiveservices.speech.ResultReason
 import com.microsoft.cognitiveservices.speech.SpeechConfig
+import com.microsoft.cognitiveservices.speech.SpeechSynthesisOutputFormat
 import com.microsoft.cognitiveservices.speech.audio.AudioConfig
 import com.microsoft.cognitiveservices.speech.translation.SpeechTranslationConfig
 import com.microsoft.cognitiveservices.speech.translation.TranslationRecognizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import java.util.concurrent.ConcurrentHashMap
+
 
 class AzureSpeechService @Inject constructor(
     private val speechKey: String,
     private val speechRegion: String
 ) {
     private var recognizer: TranslationRecognizer? = null
+    private var lastTranslatedText: String = "" // Track the last translated text to compute diffs
+    private var lastTranslation: String = "" // Track the last translation to compute diffs
+    private val TAG = "AzureSpeechService"
+    private val processedEventIds = ConcurrentHashMap<String, Boolean>()
+
 
     suspend fun startContinuousTranslation(
         inputLanguage: String,
-        outputLanguage1: String,
-        outputLanguage2: String,
-        onAudioOutput: (String, ByteArray) -> Unit
-    ) = withContext(Dispatchers.IO) {
-        val speechConfig = SpeechTranslationConfig.fromSubscription(speechKey, speechRegion).apply {
-            speechRecognitionLanguage = inputLanguage
-            addTargetLanguage(outputLanguage1)
-            addTargetLanguage(outputLanguage2)
-            voiceName = if (outputLanguage1 == "fr-FR") "fr-FR-DeniseNeural" else "lt-LT-OnaNeural"
-            // Faster utterance detection for real-time
-            setProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "200")
-        }
+        leftEarbudLanguage: String,
+        rightEarbudLanguage: String,
+        earbudLeft: String, // "left" or "right" for leftEarbudLanguage
+        earbudRight: String, // "left" or "right" for rightEarbudLanguage
+        onAudioOutput: (String, ByteArray) -> Unit) = withContext(Dispatchers.IO)
+    {
+            lastTranslatedText = "" // Reset last translated text
+            Log.d(TAG, "Starting translation: input=$inputLanguage, leftEarbud=$leftEarbudLanguage, rightEarbud=$rightEarbudLanguage")
 
-        Log.i("Interpret Service", "Starting translation with input: $inputLanguage, output1: $outputLanguage1, output2: $outputLanguage2");
+            if (leftEarbudLanguage !in listOf("fr-FR", "lt-LT") || rightEarbudLanguage !in listOf("fr-FR", "lt-LT")) {
+                Log.e(TAG, "Invalid languages: leftEarbud=$leftEarbudLanguage, rightEarbud=$rightEarbudLanguage")
+                return@withContext
+            }
 
+            val speechConfig = SpeechTranslationConfig.fromSubscription(speechKey, speechRegion).apply {
+                speechRecognitionLanguage = inputLanguage
+                addTargetLanguage(leftEarbudLanguage)
+                addTargetLanguage(rightEarbudLanguage)
+                voiceName = when (leftEarbudLanguage) {
+                    "fr-FR" -> "fr-FR-DeniseNeural"
+                    "lt-LT" -> "lt-LT-OnaNeural"
+                    else -> "fr-FR-DeniseNeural" // Fallback
+                } // Faster utterance detection for real-time
+                setProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "3000")
+            }
 
         val audioConfig = AudioConfig.fromDefaultMicrophoneInput()
         recognizer = TranslationRecognizer(speechConfig, audioConfig)
 
-        recognizer?.recognizing?.addEventListener { _, event ->
-            if (event.result.reason == ResultReason.RecognizingSpeech) {
+        //COMMENTED OUT: Recognizing event listener - This will be useful if we want to display STT in real-time
+         /*recognizer?.recognizing?.addEventListener { _, event ->
+            if (event.result.reason == ResultReason.TranslatingSpeech) {
                 val originalText = event.result.text ?: ""
+                val newText = getNewText(originalText) // Compute only the new appended part
                 // Translate only if enough info (3+ words)
-                if (originalText.split(" ").filter { it.isNotBlank() }.size >= 3) {
+                if (newText.split(" ").filter { it.isNotBlank() }.size >= 3) {
                     val translations = event.result.translations
-                    translations.forEach { (lang, text) ->
-                        synthesizeSpeech(text, lang, onAudioOutput)
+                    Log.d(TAG, "Received translations: ${translations.keys}")
+                    translations.forEach { (lang, lastTranslation) ->
+                        val earbud = if(lang == leftEarbudLanguage) earbudLeft else earbudRight
+                        synthesizeSpeech(getNewTranslation(lastTranslation), lang, earbud,onAudioOutput)
                     }
-                }
+                    Log.d("Interpret Service", "translations :  $translations");
+                    lastTranslatedText += newText // Update after processing
+                }else{
+                    // Log or handle cases where the text is too short
+                    Log.d("Interpret Service", "Text too short for translation: $newText");
+                    }
+                Log.d("Interpret Service", "originalText :  $originalText");
+                Log.d("Interpret Service", "newText: $newText");
+                Log.d("Interpret Service", "lastTranslatedText: $lastTranslatedText");
             }
-        }
+            else{
+                Log.d("Interpret Service", "Recognizing event reason: ${event.result.reason}");
+            }
+            Log.d("Interpret Service", "Recognizing");
+        }*/
+
+/*        recognizer?.recognized?.addEventListener { _, event ->
+            if (event.result.reason == ResultReason.TranslatedSpeech) {
+                val originalText = event.result.text ?: ""
+                val newText = getNewText(originalText)
+                // Translate only if enough info (3+ words)
+                if (newText.split(" ").filter { it.isNotBlank() }.size >= 3) {
+                    val translations = event.result.translations
+                    translations.forEach { (lang, lastTranslation) ->
+                        val earbud = if(lang == leftEarbudLanguage) earbudLeft else earbudRight
+                         // Compute only the new appended part
+                        synthesizeSpeech(getNewTranslation((lastTranslation)), lang,earbud, onAudioOutput)
+                        Log.d(TAG, "synthesizing speech for language: $lang, text: ${getNewTranslation(lastTranslation)}");
+                    }
+                    Log.d(TAG, "translated: $translations");
+                }
+                Log.d(TAG, "originalText: $originalText");
+                lastTranslatedText += newText
+                Log.d(TAG, "lastTranslatedText: $lastTranslatedText");
+            }
+            Log.d(TAG, "Recognized");
+        }*/
 
         recognizer?.recognized?.addEventListener { _, event ->
-            if (event.result.reason == ResultReason.RecognizedSpeech) {
-                val originalText = event.result.text ?: ""
-                // Translate only if enough info (3+ words)
-                if (originalText.split(" ").filter { it.isNotBlank() }.size >= 3) {
-                    val translations = event.result.translations
-                    translations.forEach { (lang, text) ->
-                        synthesizeSpeech(text, lang, onAudioOutput)
-                    }
+            synchronized(this@AzureSpeechService) {
+                val eventId = event.result.resultId
+                if (processedEventIds.containsKey(eventId)) {
+                    Log.d(TAG, "Skipping duplicate event: resultId=$eventId")
+                    return@addEventListener
+                }
+                processedEventIds[eventId] = true
+
+                val translations = event.result.translations
+                Log.d(TAG, "Received translations: ${translations.keys}")
+                listOf(leftEarbudLanguage, rightEarbudLanguage).forEach { lang ->
+                    translations[lang]?.let { text ->
+                        val earbud = if (lang == leftEarbudLanguage) "left" else "right"
+                        Log.d(TAG, "Translation: language=$lang, text='$text', routing to earbud=$earbud")
+                        synthesizeSpeech(text, lang, earbud, onAudioOutput)
+                    } ?: Log.w(TAG, "No translation for language=$lang")
                 }
             }
         }
@@ -67,14 +131,47 @@ class AzureSpeechService @Inject constructor(
         recognizer?.startContinuousRecognitionAsync()?.get()
     }
 
-    private fun synthesizeSpeech(text: String, language: String, onAudioOutput: (String, ByteArray) -> Unit) {
-        val speechConfig = SpeechConfig.fromSubscription(speechKey, speechRegion).apply {
-            speechSynthesisVoiceName = if (language == "fr-FR") "fr-FR-DeniseNeural" else "lt-LT-OnaNeural"
+    // Compute new text by removing previously recognized text
+    private fun getNewText(currentText: String): String {
+        //currentText.startsWith(lastTranslatedText) && lastTranslatedText.isNotEmpty()
+        return if (currentText.regionMatches(0, lastTranslatedText, 0,lastTranslatedText.length)) {
+            currentText.substring(lastTranslatedText.length)
+        } else {
+            currentText
         }
+    }
+
+    // Compute new Translation by removing previously translated text
+    private fun getNewTranslation(currentTranslation: String): String {
+        //currentTranslation.startsWith(lastTranslation) && lastTranslation.isNotEmpty()
+        return if (currentTranslation.regionMatches(0, lastTranslation, 0,lastTranslation.length)) {
+            currentTranslation.substring(lastTranslation.length)
+        } else {
+            currentTranslation
+        }
+    }
+
+    private fun synthesizeSpeech(text: String, language: String,earbud:String, onAudioOutput: (String, ByteArray) -> Unit) {
+        val speechConfig = SpeechConfig.fromSubscription(speechKey, speechRegion).apply {
+            speechSynthesisVoiceName = when (language) {
+                "fr-FR" -> "fr-FR-DeniseNeural"
+                "lt-LT" -> "lt-LT-OnaNeural"
+                else -> {
+                    Log.w(TAG, "Invalid language for synthesis: $language, using default")
+                    "fr-FR-DeniseNeural"
+                }
+            }
+            setSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Raw24Khz16BitMonoPcm)
+        }
+
         val synthesizer = com.microsoft.cognitiveservices.speech.SpeechSynthesizer(speechConfig)
         val result = synthesizer.SpeakTextAsync(text).get()
         if (result.reason == ResultReason.SynthesizingAudioCompleted) {
-            onAudioOutput(language, result.audioData)
+            Log.d(TAG, "Synthesis complete: audioData size=${result.audioData.size} bytes for earbud=$earbud")
+            onAudioOutput(earbud, result.audioData)
+        }
+        else {
+            Log.e(TAG, "Synthesis failed for text='$text', reason=${result.reason}")
         }
         result.close()
         synthesizer.close()
@@ -83,5 +180,9 @@ class AzureSpeechService @Inject constructor(
     fun stopTranslation() {
         recognizer?.stopContinuousRecognitionAsync()?.get()
         recognizer?.close()
+        processedEventIds.clear()
+        lastTranslatedText = ""; // Reset after synthesis to avoid re-sending same text
+        Log.d(TAG, "Continuous recognition stopped")
+
     }
 }

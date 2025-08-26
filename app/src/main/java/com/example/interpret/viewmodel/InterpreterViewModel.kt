@@ -1,5 +1,6 @@
 package com.example.interpret.viewmodel
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,27 +19,31 @@ class InterpreterViewModel @Inject constructor(
 ) : ViewModel() {
     private val _status = MutableStateFlow("Initializing translation...")
     val status: StateFlow<String> = _status
+    private val TAG = "InterpreterViewModel"
+
 
     fun startContinuousTranslation(
         inputLanguage: String,
-        outputLanguage1: String,
-        outputLanguage2: String
+        leftEarbudLanguage: String,
+        rightEarbudLanguage: String,
+        context: Context
     ) {
         viewModelScope.launch {
             try {
                 _status.value = "Listening for speech..."
                 speechService.startContinuousTranslation(
                     inputLanguage = inputLanguage,
-                    outputLanguage1 = outputLanguage1,
-                    outputLanguage2 = outputLanguage2,
-                    onAudioOutput = { language, audio ->
-                        bluetoothService.routeAudioToEarbud(language, audio)
-                        _status.value = "Translating to $language"
+                    leftEarbudLanguage = leftEarbudLanguage,
+                    rightEarbudLanguage = rightEarbudLanguage,
+                    earbudLeft = "left",
+                    earbudRight = "right",
+                    onAudioOutput = { earbud, audio ->
+                        Log.d(TAG, "Routing audio to earbud=$earbud, audioSize=${audio.size} bytes")
+                        bluetoothService.routeAudioToEarbud(earbud, audio, context)
 
                     }
                 )
-                Log.e("Interpret Service", "Starting translation with input: $inputLanguage, output1: $outputLanguage1, output2: $outputLanguage2");
-                //_status.value = "Translation Active"
+                _status.value = "Translation Active"
             } catch (e: Exception) {
                 _status.value = "Error: ${e.message}"
             }

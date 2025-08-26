@@ -13,6 +13,8 @@ import com.example.interpret.ui.InterpreterScreen
 import dagger.hilt.android.AndroidEntryPoint
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.view.WindowManager
+
 import dagger.hilt.android.HiltAndroidApp
 
 @AndroidEntryPoint
@@ -35,11 +37,9 @@ class MainActivity : ComponentActivity() {
             ActivityCompat.requestPermissions(this, permissions, permissionRequestId)
         }
 
-
-
         // Enable Bluetooth if not enabled
         val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        val bluetoothAdapter = bluetoothManager.getAdapter()
+        val bluetoothAdapter = bluetoothManager.adapter
 
         //val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
         if (bluetoothAdapter != null && !bluetoothAdapter.isEnabled) {
@@ -48,8 +48,26 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            InterpreterScreen()
+            InterpreterScreen(context = this)
         }
+    }
+
+    fun keepScreenOn(enabled: Boolean) {
+        if (enabled) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        keepScreenOn(false) // Clear screen-on flag when app is paused
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        keepScreenOn(false) // Ensure screen-on flag is cleared
     }
 
     private fun hasPermissions(permissions: Array<String>): Boolean {
