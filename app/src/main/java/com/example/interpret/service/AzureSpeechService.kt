@@ -8,6 +8,9 @@ import com.microsoft.cognitiveservices.speech.SpeechSynthesisOutputFormat
 import com.microsoft.cognitiveservices.speech.audio.AudioConfig
 import com.microsoft.cognitiveservices.speech.translation.SpeechTranslationConfig
 import com.microsoft.cognitiveservices.speech.translation.TranslationRecognizer
+import com.microsoft.cognitiveservices.speech.AutoDetectSourceLanguageConfig
+import com.microsoft.cognitiveservices.speech.AutoDetectSourceLanguageResult
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -26,7 +29,6 @@ class AzureSpeechService @Inject constructor(
 
 
     suspend fun startContinuousTranslation(
-        inputLanguage: String,
         leftEarbudLanguage: String,
         rightEarbudLanguage: String,
         earbudLeft: String, // "left" or "right" for leftEarbudLanguage
@@ -34,15 +36,16 @@ class AzureSpeechService @Inject constructor(
         onAudioOutput: (String, ByteArray) -> Unit) = withContext(Dispatchers.IO)
     {
             lastTranslatedText = "" // Reset last translated text
-            Log.d(TAG, "Starting translation: input=$inputLanguage, leftEarbud=$leftEarbudLanguage, rightEarbud=$rightEarbudLanguage")
+            val languages: List<String?>? = listOf(leftEarbudLanguage, rightEarbudLanguage)
+            val autoDetectConfig = AutoDetectSourceLanguageConfig.fromLanguages(languages)
 
             if (leftEarbudLanguage !in listOf("fr-FR", "lt-LT") || rightEarbudLanguage !in listOf("fr-FR", "lt-LT")) {
                 Log.e(TAG, "Invalid languages: leftEarbud=$leftEarbudLanguage, rightEarbud=$rightEarbudLanguage")
                 return@withContext
             }
 
-            val speechConfig = SpeechTranslationConfig.fromSubscription(speechKey, speechRegion).apply {
-                speechRecognitionLanguage = inputLanguage
+
+        val speechConfig = SpeechTranslationConfig.fromSubscription(speechKey, speechRegion).apply {
                 addTargetLanguage(leftEarbudLanguage)
                 addTargetLanguage(rightEarbudLanguage)
                 voiceName = when (leftEarbudLanguage) {
@@ -54,7 +57,7 @@ class AzureSpeechService @Inject constructor(
             }
 
         val audioConfig = AudioConfig.fromDefaultMicrophoneInput()
-        recognizer = TranslationRecognizer(speechConfig, audioConfig)
+        recognizer = TranslationRecognizer(speechConfig, autoDetectConfig, audioConfig)
 
         //COMMENTED OUT: Recognizing event listener - This will be useful if we want to display STT in real-time
          /*recognizer?.recognizing?.addEventListener { _, event ->
@@ -110,23 +113,43 @@ class AzureSpeechService @Inject constructor(
         recognizer?.recognized?.addEventListener { _, event ->
             synchronized(this@AzureSpeechService) {
                 val eventId = event.result.resultId
+                val autoDetectResult = AutoDetectSourceLanguageResult.fromResult(event.result)
+                val detectedLang = autoDetectResult?.language
+                Log.d(TAG, "Detected language: $detectedLang for eventId=$eventId")
+
+                val targetLang = if (detectedLang == leftEarbudLanguage) rightEarbudLanguage else leftEarbudLanguage
+                Log.d(TAG, "Target language: $targetLang for eventId=$eventId")
+
                 if (processedEventIds.containsKey(eventId)) {
                     Log.d(TAG, "Skipping duplicate event: resultId=$eventId")
                     return@addEventListener
                 }
                 processedEventIds[eventId] = true
 
+
                 val translations = event.result.translations
                 Log.d(TAG, "Received translations: ${translations.keys}")
-                listOf(leftEarbudLanguage, rightEarbudLanguage).forEach { lang ->
-                    translations[lang]?.let { text ->
-                        val earbud = if (lang == leftEarbudLanguage) "left" else "right"
-                        Log.d(TAG, "Translation: language=$lang, text='$text', routing to earbud=$earbud")
-                        synthesizeSpeech(text, lang, earbud, onAudioOutput)
-                    } ?: Log.w(TAG, "No translation for language=$lang")
+                val earbud = if (targetLang == leftEarbudLanguage) "left" else "right"
+                val text = event.result.translations[targetLang]
+
+                if (text != null) {
+                    Log.d(TAG, "Detected language=$detectedLang, translating to target=$targetLang, routing to earbud=$earbud, text='$text'")
+                    synthesizeSpeech(text, targetLang, earbud, onAudioOutput)
                 }
             }
         }
+
+/*        recognizer?.recognized?.addEventListener { _, event ->
+            val autoDetectResult = AutoDetectSourceLanguageResult.fromResult(event.result)
+            val detectedLang = autoDetectResult?.language
+
+            val targetLang = if (detectedLang == leftEarbudLanguage) rightEarbudLanguage else leftEarbudLanguage
+            val earbud = if (targetLang == leftEarbudLanguage) "left" else "right"
+            val text = event.result.translations[targetLang]
+            if (text != null) {
+                synthesizeSpeech(text, targetLang, earbud, onAudioOutput)
+            }
+        }*/
 
         recognizer?.startContinuousRecognitionAsync()?.get()
     }
@@ -164,11 +187,11 @@ class AzureSpeechService @Inject constructor(
             setSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Raw24Khz16BitMonoPcm)
         }
 
-        val synthesizer = com.microsoft.cognitiveservices.speech.SpeechSynthesizer(speechConfig)
+        val synthesizer = com.microsoft.cognitiveservices.speech.SpeechSynthesizer(speechConfig, null)
         val result = synthesizer.SpeakTextAsync(text).get()
         if (result.reason == ResultReason.SynthesizingAudioCompleted) {
             Log.d(TAG, "Synthesis complete: audioData size=${result.audioData.size} bytes for earbud=$earbud")
-            onAudioOutput(earbud, result.audioData)
+            onAudioOutput(earbud, result.audioData) // This event is routed to the appropriate earbud
         }
         else {
             Log.e(TAG, "Synthesis failed for text='$text', reason=${result.reason}")

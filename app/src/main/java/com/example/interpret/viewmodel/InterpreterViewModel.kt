@@ -23,7 +23,6 @@ class InterpreterViewModel @Inject constructor(
 
 
     fun startContinuousTranslation(
-        inputLanguage: String,
         leftEarbudLanguage: String,
         rightEarbudLanguage: String,
         context: Context
@@ -32,7 +31,6 @@ class InterpreterViewModel @Inject constructor(
             try {
                 _status.value = "Listening for speech..."
                 speechService.startContinuousTranslation(
-                    inputLanguage = inputLanguage,
                     leftEarbudLanguage = leftEarbudLanguage,
                     rightEarbudLanguage = rightEarbudLanguage,
                     earbudLeft = "left",
