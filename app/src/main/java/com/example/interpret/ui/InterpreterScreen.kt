@@ -33,7 +33,7 @@ fun InterpreterScreen(viewModel: InterpreterViewModel = hiltViewModel(), context
     var earbudRightLanguage by remember { mutableStateOf("lt-LT") }
     var expandedLeft by remember { mutableStateOf(false) }
     var expandedRight by remember { mutableStateOf(false) }
-    val languages = listOf("fr-FR" to "French", "lt-LT" to "Lithuanian")
+    val languages = listOf("fr-FR" to "French", "lt-LT" to "Lithuanian", "en-US" to "English") // Add more languages as needed
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 

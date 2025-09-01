@@ -10,10 +10,17 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import com.example.interpret.ui.InterpreterScreen
+import com.example.interpret.ui.FTUEScreen
 import dagger.hilt.android.AndroidEntryPoint
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.view.WindowManager
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 import dagger.hilt.android.HiltAndroidApp
 
@@ -48,7 +55,17 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            InterpreterScreen(context = this)
+            var showFTUE by remember { mutableStateOf(
+                !getSharedPreferences("InterpreterPrefs", Context.MODE_PRIVATE)
+                    .getBoolean("ftue_completed", false)
+            ) }
+            if (showFTUE) {
+                FTUEScreen(
+                    onPermissionsGranted = { showFTUE = false }
+                )
+            } else {
+                InterpreterScreen(context = this)
+            }
         }
     }
 

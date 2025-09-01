@@ -1,6 +1,7 @@
 package com.example.interpret.ui
 
 import android.Manifest
+import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -260,96 +261,3 @@ fun FTUEScreen(
         }
     }
 }
-```
-
-#### Updated `app/src/main/java/com/example/interpreterapp/MainActivity.kt`
-Checks FTUE completion and shows `FTUEScreen` or `InterpreterScreen`.
-
-```kotlin
-package com.example.interpreterapp
-
-import android.content.Context
-import android.os.Bundle
-import android.view.WindowManager
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.tooling.preview.Preview
-import com.example.interpreterapp.ui.FTUEScreen
-import com.example.interpreterapp.ui.InterpreterScreen
-import dagger.hilt.android.AndroidEntryPoint
-
-@AndroidEntryPoint
-class MainActivity : ComponentActivity() {
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            var showFTUE by remember { mutableStateOf(
-                !getSharedPreferences("InterpreterPrefs", Context.MODE_PRIVATE)
-                    .getBoolean("ftue_completed", false)
-            ) }
-            if (showFTUE) {
-                FTUEScreen(
-                    onPermissionsGranted = { showFTUE = false }
-                )
-            } else {
-                InterpreterScreen()
-            }
-        }
-    }
-
-    fun keepScreenOn(enabled: Boolean) {
-        if (enabled) {
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        keepScreenOn(false)
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        keepScreenOn(false)
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun DefaultPreview() {
-    InterpreterScreen()
-}
-```
-
-#### Updated `app/src/main/AndroidManifest.xml`
-Added required permissions.
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-package="com.example.interpreterapp">
-
-<uses-permission android:name="android.permission.RECORD_AUDIO" />
-<uses-permission android:name="android.permission.BLUETOOTH" />
-<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-
-<application
-android:allowBackup="true"
-android:icon="@mipmap/ic_launcher"
-android:label="@string/app_name"
-android:roundIcon="@mipmap/ic_launcher_round"
-android:supportsRtl="true"
-android:theme="@style/Theme.InterpreterApp">
-<activity
-android:name=".MainActivity"
-android:exported="true">
-<intent-filter>
-<action android:name="android.intent.action

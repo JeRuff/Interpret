@@ -39,19 +39,16 @@ class AzureSpeechService @Inject constructor(
             val languages: List<String?>? = listOf(leftEarbudLanguage, rightEarbudLanguage)
             val autoDetectConfig = AutoDetectSourceLanguageConfig.fromLanguages(languages)
 
-            if (leftEarbudLanguage !in listOf("fr-FR", "lt-LT") || rightEarbudLanguage !in listOf("fr-FR", "lt-LT")) {
-                Log.e(TAG, "Invalid languages: leftEarbud=$leftEarbudLanguage, rightEarbud=$rightEarbudLanguage")
-                return@withContext
-            }
-
-
         val speechConfig = SpeechTranslationConfig.fromSubscription(speechKey, speechRegion).apply {
-                addTargetLanguage(leftEarbudLanguage)
-                addTargetLanguage(rightEarbudLanguage)
-                voiceName = when (leftEarbudLanguage) {
-                    "fr-FR" -> "fr-FR-DeniseNeural"
-                    "lt-LT" -> "lt-LT-OnaNeural"
-                    else -> "fr-FR-DeniseNeural" // Fallback
+            addTargetLanguage(leftEarbudLanguage)
+            addTargetLanguage(rightEarbudLanguage)
+            addTargetLanguage("en-US") // Always include English for better detection
+
+            voiceName = when (leftEarbudLanguage) {
+                "fr-FR" -> "fr-FR-DeniseNeural"
+                "lt-LT" -> "lt-LT-OnaNeural"
+                "en-US" -> "en-US-JennyNeural"
+                else -> "en-US-JennyNeural" // Fallback
                 } // Faster utterance detection for real-time
                 setProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "3000")
             }
@@ -179,9 +176,10 @@ class AzureSpeechService @Inject constructor(
             speechSynthesisVoiceName = when (language) {
                 "fr-FR" -> "fr-FR-DeniseNeural"
                 "lt-LT" -> "lt-LT-OnaNeural"
+                "en-US" -> "en-US-JennyNeural"
                 else -> {
                     Log.w(TAG, "Invalid language for synthesis: $language, using default")
-                    "fr-FR-DeniseNeural"
+                    "en-US-JennyNeural"
                 }
             }
             setSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Raw24Khz16BitMonoPcm)
