@@ -1,4 +1,4 @@
-package com.example.interpret
+package com.knowbody.interpret
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4

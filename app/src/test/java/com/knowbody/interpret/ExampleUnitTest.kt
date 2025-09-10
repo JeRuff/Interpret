@@ -1,4 +1,4 @@
-package com.example.interpret
+package com.knowbody.interpret
 
 import org.junit.Test
 

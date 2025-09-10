@@ -1,4 +1,4 @@
-package com.example.interpret.service
+package com.knowbody.interpret.service
 
 import android.util.Log
 import com.microsoft.cognitiveservices.speech.PropertyId

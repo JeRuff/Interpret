@@ -1,11 +1,10 @@
-package com.example.interpret.viewmodel
+package com.knowbody.interpret.viewmodel
 
 import android.content.Context
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.interpret.service.AzureSpeechService
-import com.example.interpret.service.BluetoothAudioService
+import com.knowbody.interpret.service.AzureSpeechService
+import com.knowbody.interpret.service.BluetoothAudioService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,31 +16,23 @@ class InterpreterViewModel @Inject constructor(
     private val speechService: AzureSpeechService,
     private val bluetoothService: BluetoothAudioService
 ) : ViewModel() {
-    private val _status = MutableStateFlow("Initializing translation...")
+    private val _status = MutableStateFlow("Select languages and start")
     val status: StateFlow<String> = _status
-    private val TAG = "InterpreterViewModel"
 
-
-    fun startContinuousTranslation(
+    fun startTranslation(
         leftEarbudLanguage: String,
         rightEarbudLanguage: String,
         context: Context
     ) {
         viewModelScope.launch {
             try {
-                _status.value = "Listening for speech..."
-                speechService.startContinuousTranslation(
+                _status.value = "Starting translation..."
+                speechService.startTranslation(
                     leftEarbudLanguage = leftEarbudLanguage,
                     rightEarbudLanguage = rightEarbudLanguage,
-                    earbudLeft = "left",
-                    earbudRight = "right",
-                    onAudioOutput = { earbud, audio ->
-                        Log.d(TAG, "Routing audio to earbud=$earbud, audioSize=${audio.size} bytes")
-                        bluetoothService.routeAudioToEarbud(earbud, audio, context)
-
-                    }
+                    context = context
                 )
-                _status.value = "Translation Active"
+                _status.value = "Translation in progress"
             } catch (e: Exception) {
                 _status.value = "Error: ${e.message}"
             }
@@ -53,8 +44,11 @@ class InterpreterViewModel @Inject constructor(
         _status.value = "Translation stopped"
     }
 
-    override fun onCleared() {
-        super.onCleared()
-        stopTranslation()
+    fun testEarbudChannel(earbud: String, context: Context) {
+        viewModelScope.launch {
+            _status.value = "Testing $earbud earbud..."
+            bluetoothService.testEarbudChannel(earbud, context)
+            _status.value = "Test $earbud earbud complete"
+        }
     }
 }

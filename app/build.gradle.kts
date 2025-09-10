@@ -9,12 +9,12 @@ plugins {
 }
 
 android {
-    namespace = "com.example.interpret"
+    namespace = "com.knowbody.interpret"
     compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.interpret"
-        minSdk = 30
+        minSdk = 31
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -52,6 +52,7 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation("androidx.lifecycle:lifecycle-service:2.9.3")
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)

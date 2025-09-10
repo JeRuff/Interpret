@@ -1,4 +1,4 @@
-package com.example.interpret.ui.theme
+package com.knowbody.interpret.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
