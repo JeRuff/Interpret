@@ -1,6 +1,7 @@
 package com.knowbody.interpret.viewmodel
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.knowbody.interpret.service.AzureSpeechService
@@ -34,21 +35,36 @@ class InterpreterViewModel @Inject constructor(
                 )
                 _status.value = "Translation in progress"
             } catch (e: Exception) {
-                _status.value = "Error: ${e.message}"
+                Log.e("InterpreterViewModel", "Failed to start translation", e)
+                _status.value = when (e.message) {
+                    "Audio permission not granted" -> "Error: Please grant audio permission"
+                    "No speech detected for 10 seconds, stopping processing" -> "Error: No speech detected, please try again"
+                    else -> "Error: ${e.message ?: "Unknown error"}"
+                }
             }
         }
     }
 
     fun stopTranslation() {
-        speechService.stopTranslation()
-        _status.value = "Translation stopped"
+        try {
+            speechService.stopTranslation()
+            _status.value = "Translation stopped"
+        } catch (e: Exception) {
+            Log.e("InterpreterViewModel", "Failed to stop translation", e)
+            _status.value = "Error: ${e.message ?: "Unknown error"}"
+        }
     }
 
     fun testEarbudChannel(earbud: String, context: Context) {
         viewModelScope.launch {
-            _status.value = "Testing $earbud earbud..."
-            bluetoothService.testEarbudChannel(earbud, context)
-            _status.value = "Test $earbud earbud complete"
+            try {
+                _status.value = "Testing $earbud earbud..."
+                bluetoothService.testEarbudChannel(earbud, context)
+                _status.value = "Test $earbud earbud complete"
+            } catch (e: Exception) {
+                Log.e("InterpreterViewModel", "Failed to test earbud channel", e)
+                _status.value = "Error: ${e.message ?: "Unknown error"}"
+            }
         }
     }
 }

@@ -13,7 +13,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.interpret"
+        applicationId = "com.knowbody.interpret"
         minSdk = 31
         targetSdk = 36
         versionCode = 1
