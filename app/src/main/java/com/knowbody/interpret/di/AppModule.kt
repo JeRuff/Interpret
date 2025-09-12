@@ -17,12 +17,12 @@ object AppModule {
     @Provides
     @Singleton
     fun provideAzureSpeechService(@ApplicationContext context: Context): AzureSpeechService {
-        return AzureSpeechService(context)
+        return AzureSpeechService(context,"5xnphLc8VYj1yKTzdBQJ8Xz3g3ILltUHnOos5dJTMbLTwqMD0MlhJQQJ99BHACi5YpzXJ3w3AAAYACOGgrJH" ,"northeurope")
     }
 
     @Provides
     @Singleton
     fun provideBluetoothAudioService(@ApplicationContext context: Context): BluetoothAudioService {
-        return BluetoothAudioService(context)
+        return BluetoothAudioService()
     }
 }

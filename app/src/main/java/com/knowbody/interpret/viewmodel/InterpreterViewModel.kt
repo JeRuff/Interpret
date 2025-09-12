@@ -31,15 +31,21 @@ class InterpreterViewModel @Inject constructor(
                 speechService.startTranslation(
                     leftEarbudLanguage = leftEarbudLanguage,
                     rightEarbudLanguage = rightEarbudLanguage,
-                    context = context
+                    context = context,
+                    onAudioOutput = { earbud, audioData ->
+                        bluetoothService.routeAudioToEarbud(earbud, audioData, context)
+                    }
                 )
                 _status.value = "Translation in progress"
             } catch (e: Exception) {
                 Log.e("InterpreterViewModel", "Failed to start translation", e)
-                _status.value = when (e.message) {
-                    "Audio permission not granted" -> "Error: Please grant audio permission"
-                    "No speech detected for 10 seconds, stopping processing" -> "Error: No speech detected, please try again"
-                    else -> "Error: ${e.message ?: "Unknown error"}"
+                _status.value = when {
+                    e.message?.contains("Audio permission not granted") == true -> "Error: Please grant audio permission"
+                    e.message?.contains("AppOps RECORD_AUDIO permission not granted") == true -> "Error: Microphone access blocked by system, please check permissions"
+                    e.message?.contains("No speech detected for 15 seconds") == true -> "Error: No speech detected, please speak clearly and try again"
+                    e.message?.contains("SPXERR_LOG_FILE_OPEN_FAILED") == true -> "Error: Failed to initialize logging, check storage permissions"
+                    e.message?.contains("WS_OPEN_ERROR_UNDERLYING_IO_OPEN_FAILED") == true -> "Error: Failed to connect to Azure service, check network or credentials"
+                    else -> "Error: ${e.message ?: "Unknown error, check network or Azure credentials"}"
                 }
             }
         }
