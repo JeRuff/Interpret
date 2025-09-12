@@ -1,6 +1,6 @@
 [versions]
 activityComposeVersion = "1.8.0"
-agp = "8.11.1"
+agp = "8.11.2"
 clientSdkVersion = "1.45.0"
 coreKtxVersion = "1.12.0"
 hiltAndroid = "2.57"
