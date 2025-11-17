@@ -1,14 +1,15 @@
 package com.knowbody.interpret.di
 
-import android.content.Context
+import com.knowbody.interpret.BuildConfig
 import com.knowbody.interpret.service.AzureSpeechService
 import com.knowbody.interpret.service.BluetoothAudioService
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
-import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -16,13 +17,16 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideAzureSpeechService(@ApplicationContext context: Context): AzureSpeechService {
-        return AzureSpeechService(context,"5xnphLc8VYj1yKTzdBQJ8Xz3g3ILltUHnOos5dJTMbLTwqMD0MlhJQQJ99BHACi5YpzXJ3w3AAAYACOGgrJH" ,"northeurope")
+    fun provideAzureSpeechService(): AzureSpeechService {
+        return AzureSpeechService(
+            speechKey = BuildConfig.SPEECH_KEY,
+            speechRegion = BuildConfig.SPEECH_REGION
+        )
     }
 
     @Provides
     @Singleton
     fun provideBluetoothAudioService(@ApplicationContext context: Context): BluetoothAudioService {
-        return BluetoothAudioService()
+        return BluetoothAudioService(context)
     }
 }
