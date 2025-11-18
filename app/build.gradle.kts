@@ -1,11 +1,14 @@
+import java.util.Properties
+
 plugins {
-    alias(libs.plugins.kotlin.compose)
-    kotlin("kapt")
+    //id("org.jetbrains.kotlin.android") version "2.2.21" apply false
+    //id("org.jetbrains.kotlin.kapt") version "2.2.21" apply false
 
     id("com.android.application")
     id("kotlin-android")
     id("kotlin-kapt")
     id("dagger.hilt.android.plugin")
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -14,12 +17,27 @@ android {
 
     defaultConfig {
         applicationId = "com.knowbody.interpret"
-        minSdk = 31
+        minSdk = 30
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Load API keys from local.properties OUTSIDE of defaultConfig
+    val localProperties = Properties()
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { stream ->
+            localProperties.load(stream)
+        }
+    }
+
+    // Set BuildConfig fields
+    defaultConfig {
+        buildConfigField("String", "SPEECH_KEY", "\"${localProperties.getProperty("azure.speech.key") ?: ""}\"")
+        buildConfigField("String", "SPEECH_REGION", "\"${localProperties.getProperty("azure.speech.region") ?: "northeurope"}\"")
     }
 
     buildTypes {
@@ -40,10 +58,13 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
+
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.3"
     }
+    buildToolsVersion = "35.0.0"
 }
 
 apply(plugin = "dagger.hilt.android.plugin")
@@ -52,7 +73,6 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation("androidx.lifecycle:lifecycle-service:2.9.3")
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
@@ -71,7 +91,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.speech.client.sdk)
-
     implementation(libs.androidx.core)
 
     implementation("androidx.navigation:navigation-compose:2.6.0")

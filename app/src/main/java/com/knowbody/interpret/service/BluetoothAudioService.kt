@@ -1,241 +1,195 @@
 package com.knowbody.interpret.service
 
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothHeadset
-import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import android.util.Log
-import java.util.concurrent.locks.ReentrantLock
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-class BluetoothAudioService @Inject constructor() {
-    companion object {
-        private const val TAG = "BluetoothAudioService"
-        private const val SAMPLE_RATE = 16000 // 16kHz for Azure audio
-        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_OUT_STEREO // Stereo for earbud routing
-        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+class BluetoothAudioService @Inject constructor(
+    private val context: Context
+) {
+    private val audioManager: AudioManager =
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val TAG = "BluetoothAudioService"
+    private val activeTracks = mutableListOf<AudioTrack>()
+
+    // Track which language goes to which earbud
+    private var leftEarbudLanguage: String = ""
+    private var rightEarbudLanguage: String = ""
+
+    fun setLanguageRouting(outputLanguage1: String, outputLanguage2: String) {
+        leftEarbudLanguage = outputLanguage1
+        rightEarbudLanguage = outputLanguage2
+        Log.d(TAG, "Language routing set - Left: $outputLanguage1, Right: $outputLanguage2")
     }
 
-    private var bluetoothHeadset: BluetoothHeadset? = null
-    private var audioManager: AudioManager? = null
-    private var isBluetoothInitialized = false
-    private val audioLock = ReentrantLock()
+    suspend fun routeAudioToEarbud(language: String, audioData: ByteArray) = withContext(Dispatchers.IO) {
+        var audioTrack: AudioTrack? = null
 
-    // Explicit implementation of BluetoothProfile.ServiceListener
-    private class BluetoothServiceListener(
-        private val onConnected: (BluetoothHeadset) -> Unit,
-        private val onDisconnected: () -> Unit
-    ) : BluetoothProfile.ServiceListener {
-        override fun onServiceConnected(profile: Int, proxy: BluetoothProfile?) {
-            if (profile == BluetoothHeadset.HEADSET && proxy is BluetoothHeadset) {
-                onConnected(proxy)
-            }
-        }
-
-        override fun onServiceDisconnected(profile: Int) {
-            if (profile == BluetoothHeadset.HEADSET) {
-                onDisconnected()
-            }
-        }
-    }
-
-    fun initializeBluetooth(context: Context) {
         try {
-            audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-            if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
-                bluetoothAdapter.getProfileProxy(
-                    context,
-                    BluetoothServiceListener(
-                        onConnected = { headset ->
-                            bluetoothHeadset = headset
-                            isBluetoothInitialized = true
-                            audioManager?.startBluetoothSco()
-                            audioManager?.isBluetoothScoOn = true
-                            Log.d(TAG, "BluetoothHeadset connected")
-                        },
-                        onDisconnected = {
-                            bluetoothHeadset = null
-                            isBluetoothInitialized = false
-                            audioManager?.stopBluetoothSco()
-                            audioManager?.isBluetoothScoOn = false
-                            Log.d(TAG, "BluetoothHeadset disconnected")
-                        }
-                    ),
-                    BluetoothHeadset.HEADSET
+            // Azure Speech Service returns 16kHz, 16-bit, mono PCM by default
+            val sampleRate = 16000
+            val audioFormat = AudioFormat.ENCODING_PCM_16BIT
+
+            // Determine which channel(s) to use based on language routing
+            val channelConfig = when (language) {
+                leftEarbudLanguage -> {
+                    Log.d(TAG, "Routing $language to LEFT earbud")
+                    AudioFormat.CHANNEL_OUT_FRONT_LEFT
+                }
+                rightEarbudLanguage -> {
+                    Log.d(TAG, "Routing $language to RIGHT earbud")
+                    AudioFormat.CHANNEL_OUT_FRONT_RIGHT
+                }
+                else -> {
+                    Log.w(TAG, "Language $language not mapped, using MONO output")
+                    AudioFormat.CHANNEL_OUT_MONO
+                }
+            }
+
+            // Calculate buffer size
+            val minBufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+            val bufferSize = maxOf(audioData.size * 2, minBufferSize) // *2 for stereo conversion
+
+            Log.d(TAG, "Playing audio for $language: ${audioData.size} bytes, buffer: $bufferSize")
+
+            // Convert mono to stereo with proper channel routing
+            val stereoData = convertMonoToStereoWithRouting(audioData, channelConfig)
+
+            audioTrack = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
                 )
-            } else {
-                Log.w(TAG, "Bluetooth not available or disabled")
-                isBluetoothInitialized = false
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize Bluetooth", e)
-            isBluetoothInitialized = false
-        }
-    }
-
-    fun routeAudioToEarbud(earbud: String, audioData: ByteArray, context: Context) {
-        audioLock.lock()
-        try {
-            Log.d(TAG, "Routing audio to $earbud, size: ${audioData.size} bytes")
-            initializeBluetooth(context)
-
-            // Convert mono audio to stereo, placing audio in the correct channel
-            val stereoAudio = convertMonoToStereo(audioData, earbud)
-
-            val audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_ALL)
-                .build()
-
-            val audioFormat = AudioFormat.Builder()
-                .setSampleRate(SAMPLE_RATE)
-                .setChannelMask(CHANNEL_CONFIG)
-                .setEncoding(AUDIO_FORMAT)
-                .build()
-
-            val bufferSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
-            val audioTrack = AudioTrack.Builder()
-                .setAudioAttributes(audioAttributes)
-                .setAudioFormat(audioFormat)
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(audioFormat)
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO) // Always use stereo for routing
+                        .build()
+                )
                 .setBufferSizeInBytes(bufferSize)
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
 
-            // Ensure Bluetooth SCO is active if Bluetooth is connected
-            if (isBluetoothInitialized && bluetoothHeadset != null) {
-                audioManager?.startBluetoothSco()
-                audioManager?.isBluetoothScoOn = true
-                Log.d(TAG, "Bluetooth SCO enabled for $earbud")
-            } else {
-                Log.w(TAG, "Bluetooth not initialized, using device speaker for $earbud")
+            synchronized(activeTracks) {
+                activeTracks.add(audioTrack)
             }
 
+            // Start playback
             audioTrack.play()
-            audioTrack.write(stereoAudio, 0, stereoAudio.size)
-            audioTrack.stop()
-            audioTrack.release()
 
-            // Clean up Bluetooth SCO after playback
-            if (isBluetoothInitialized && bluetoothHeadset != null) {
-                audioManager?.stopBluetoothSco()
-                audioManager?.isBluetoothScoOn = false
-                Log.d(TAG, "Bluetooth SCO stopped after playback")
-            }
+            // Write audio data
+            val bytesWritten = audioTrack.write(stereoData, 0, stereoData.size)
+            Log.d(TAG, "Wrote $bytesWritten bytes to audio track")
 
-            Log.d(TAG, "Audio played for $earbud")
+            // Wait for playback to complete
+            val durationMs = ((audioData.size / 2.0) / sampleRate * 1000).toLong()
+            Thread.sleep(durationMs + 100) // Add small buffer
+
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to route audio to $earbud", e)
-            throw e
+            Log.e(TAG, "Error playing audio for $language: ${e.message}", e)
         } finally {
-            audioLock.unlock()
+            try {
+                audioTrack?.let { track ->
+                    if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                        track.stop()
+                    }
+                    track.release()
+                    synchronized(activeTracks) {
+                        activeTracks.remove(track)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error cleaning up audio track: ${e.message}")
+            }
         }
     }
 
-    private fun convertMonoToStereo(monoAudio: ByteArray, earbud: String): ByteArray {
-        // Azure audio is mono (16-bit PCM, 1 channel). Convert to stereo (2 channels).
-        val stereoAudio = ByteArray(monoAudio.size * 2)
-        for (i in monoAudio.indices step 2) {
-            val sample = (monoAudio[i].toInt() and 0xFF) or (monoAudio[i + 1].toInt() shl 8)
-            val leftSample = if (earbud == "left") sample else 0
-            val rightSample = if (earbud == "right") sample else 0
-            // Left channel
-            stereoAudio[i * 2] = (leftSample and 0xFF).toByte()
-            stereoAudio[i * 2 + 1] = ((leftSample shr 8) and 0xFF).toByte()
-            // Right channel
-            stereoAudio[i * 2 + 2] = (rightSample and 0xFF).toByte()
-            stereoAudio[i * 2 + 3] = ((rightSample shr 8) and 0xFF).toByte()
+    /**
+     * Converts mono PCM16 audio to stereo, routing to specified channel
+     * @param monoData Original mono audio data
+     * @param channelConfig Which channel to route to (LEFT, RIGHT, or MONO for both)
+     * @return Stereo audio data
+     */
+    private fun convertMonoToStereoWithRouting(monoData: ByteArray, channelConfig: Int): ByteArray {
+        val stereoData = ByteArray(monoData.size * 2)
+
+        // PCM16 is 2 bytes per sample
+        for (i in 0 until monoData.size step 2) {
+            val sample = ((monoData[i + 1].toInt() shl 8) or (monoData[i].toInt() and 0xFF)).toShort()
+
+            val stereoIndex = i * 2
+
+            when (channelConfig) {
+                AudioFormat.CHANNEL_OUT_FRONT_LEFT -> {
+                    // Left channel: original audio
+                    stereoData[stereoIndex] = monoData[i]
+                    stereoData[stereoIndex + 1] = monoData[i + 1]
+                    // Right channel: silence (0)
+                    stereoData[stereoIndex + 2] = 0
+                    stereoData[stereoIndex + 3] = 0
+                }
+                AudioFormat.CHANNEL_OUT_FRONT_RIGHT -> {
+                    // Left channel: silence (0)
+                    stereoData[stereoIndex] = 0
+                    stereoData[stereoIndex + 1] = 0
+                    // Right channel: original audio
+                    stereoData[stereoIndex + 2] = monoData[i]
+                    stereoData[stereoIndex + 3] = monoData[i + 1]
+                }
+                else -> {
+                    // Both channels: original audio (MONO/fallback)
+                    stereoData[stereoIndex] = monoData[i]
+                    stereoData[stereoIndex + 1] = monoData[i + 1]
+                    stereoData[stereoIndex + 2] = monoData[i]
+                    stereoData[stereoIndex + 3] = monoData[i + 1]
+                }
+            }
         }
-        Log.d(TAG, "Converted mono to stereo for $earbud: leftSample=${stereoAudio[0]}, rightSample=${stereoAudio[2]}")
-        return stereoAudio
-    }
 
-    fun testEarbudChannel(earbud: String, context: Context) {
-        audioLock.lock()
-        try {
-            Log.d(TAG, "Testing audio channel for $earbud")
-            initializeBluetooth(context)
-
-            // Generate a 1-second 440Hz sine wave for testing
-            val sampleRate = SAMPLE_RATE
-            val numSamples = sampleRate
-            val monoAudio = ByteArray(numSamples * 2) // 16-bit PCM
-            for (i in 0 until numSamples) {
-                val sample = (Math.sin(2.0 * Math.PI * i / (sampleRate / 440.0)) * 0.5 * Short.MAX_VALUE).toInt()
-                monoAudio[i * 2] = (sample and 0xFF).toByte()
-                monoAudio[i * 2 + 1] = ((sample shr 8) and 0xFF).toByte()
-            }
-
-            // Convert to stereo for the specified earbud
-            val stereoAudio = convertMonoToStereo(monoAudio, earbud)
-
-            val audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_ALL)
-                .build()
-
-            val audioFormat = AudioFormat.Builder()
-                .setSampleRate(SAMPLE_RATE)
-                .setChannelMask(CHANNEL_CONFIG)
-                .setEncoding(AUDIO_FORMAT)
-                .build()
-
-            val bufferSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
-            val audioTrack = AudioTrack.Builder()
-                .setAudioAttributes(audioAttributes)
-                .setAudioFormat(audioFormat)
-                .setBufferSizeInBytes(bufferSize)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build()
-
-            // Ensure Bluetooth SCO is active if Bluetooth is connected
-            if (isBluetoothInitialized && bluetoothHeadset != null) {
-                audioManager?.startBluetoothSco()
-                audioManager?.isBluetoothScoOn = true
-                Log.d(TAG, "Bluetooth SCO enabled for test $earbud")
-            } else {
-                Log.w(TAG, "Bluetooth not initialized, using device speaker for test $earbud")
-            }
-
-            audioTrack.play()
-            audioTrack.write(stereoAudio, 0, stereoAudio.size)
-            audioTrack.stop()
-            audioTrack.release()
-
-            // Clean up Bluetooth SCO
-            if (isBluetoothInitialized && bluetoothHeadset != null) {
-                audioManager?.stopBluetoothSco()
-                audioManager?.isBluetoothScoOn = false
-                Log.d(TAG, "Bluetooth SCO stopped after test")
-            }
-
-            Log.d(TAG, "Test audio played for $earbud")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to test audio channel for $earbud", e)
-            throw e
-        } finally {
-            audioLock.unlock()
-        }
+        return stereoData
     }
 
     fun cleanup() {
-        try {
-            bluetoothHeadset?.let {
-                audioManager?.stopBluetoothSco()
-                audioManager?.isBluetoothScoOn = false
-                BluetoothAdapter.getDefaultAdapter()?.closeProfileProxy(BluetoothHeadset.HEADSET, it)
-                bluetoothHeadset = null
-                isBluetoothInitialized = false
-                Log.d(TAG, "Bluetooth cleaned up")
+        synchronized(activeTracks) {
+            activeTracks.forEach { track ->
+                try {
+                    if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                        track.stop()
+                    }
+                    track.release()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during cleanup: ${e.message}")
+                }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to clean up Bluetooth", e)
+            activeTracks.clear()
+        }
+        leftEarbudLanguage = ""
+        rightEarbudLanguage = ""
+        Log.d(TAG, "Audio service cleaned up")
+    }
+
+    fun isBluetoothAudioConnected(): Boolean {
+        return audioManager.isBluetoothScoOn ||
+                audioManager.isBluetoothA2dpOn ||
+                audioManager.isWiredHeadsetOn
+    }
+
+    fun getAudioDeviceInfo(): String {
+        return when {
+            audioManager.isBluetoothScoOn -> "Bluetooth SCO"
+            audioManager.isBluetoothA2dpOn -> "Bluetooth A2DP"
+            audioManager.isWiredHeadsetOn -> "Wired Headset"
+            audioManager.isSpeakerphoneOn -> "Speakerphone"
+            else -> "Unknown/Default"
         }
     }
 }

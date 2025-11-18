@@ -14,7 +14,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.knowbody.interpret.ui.ModeSelectionScreen
 import com.knowbody.interpret.ui.InterpreterScreen
 import com.knowbody.interpret.viewmodel.InterpreterViewModel
 import dagger.hilt.android.AndroidEntryPoint
@@ -75,9 +74,6 @@ class MainActivity : ComponentActivity() {
                         .background(surfaceColor)
                         .padding(16.dp)
                 ) {
-                    composable("modeSelection") {
-                        ModeSelectionScreen(navController)
-                    }
                     composable("interpreter") {
                         InterpreterScreen(viewModel)
                     }

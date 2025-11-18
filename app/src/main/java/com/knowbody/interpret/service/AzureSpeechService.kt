@@ -1,269 +1,155 @@
 package com.knowbody.interpret.service
 
-import android.content.Context
-import android.os.Build
 import android.util.Log
-import androidx.core.content.ContextCompat
-import com.microsoft.cognitiveservices.speech.PropertyId
+import com.knowbody.interpret.model.LanguageConfig
 import com.microsoft.cognitiveservices.speech.ResultReason
 import com.microsoft.cognitiveservices.speech.SpeechConfig
+import com.microsoft.cognitiveservices.speech.SpeechSynthesisResult
+import com.microsoft.cognitiveservices.speech.SpeechSynthesizer
 import com.microsoft.cognitiveservices.speech.audio.AudioConfig
 import com.microsoft.cognitiveservices.speech.translation.SpeechTranslationConfig
 import com.microsoft.cognitiveservices.speech.translation.TranslationRecognizer
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.util.concurrent.locks.ReentrantLock
 import javax.inject.Inject
-import kotlin.time.Duration.Companion.seconds
-import kotlinx.coroutines.delay
 
 class AzureSpeechService @Inject constructor(
-    private val context: Context,
     private val speechKey: String,
     private val speechRegion: String
 ) {
-    companion object {
-        private const val TAG = "AzureSpeechService"
-        private const val SILENCE_TIMEOUT_SECONDS = 15L // Timeout for no speech
-        private const val MAX_RETRIES = 3
-        private const val RETRY_DELAY_MS = 2000L
-        private val FALLBACK_REGIONS = listOf("westeurope", "eastus") // Fallback regions
-    }
-
-    private var speechConfig: SpeechTranslationConfig? = null
-    private var audioConfig: AudioConfig? = null
     private var recognizer: TranslationRecognizer? = null
-    private var isRunning = false
-    private val lock = ReentrantLock()
-    private val coroutineScope = CoroutineScope(Dispatchers.IO)
-    private var currentRegion = speechRegion
+    private val TAG = "AzureSpeechService"
 
-    init {
-        val logFile = File(context.filesDir, "speech_sdk.log").absolutePath
-
+    suspend fun startContinuousTranslation(
+        inputLanguage: String,
+        outputLanguage1: String,
+        outputLanguage2: String,
+        onAudioOutput: (String, ByteArray) -> Unit,
+        onError: (String) -> Unit,
+        onTranslationText: (String, String) -> Unit = { _, _ -> }
+    ) = withContext(Dispatchers.IO) {
         try {
-            // Initialize SpeechTranslationConfig
-            speechConfig = SpeechTranslationConfig.fromSubscription(speechKey, currentRegion).apply {
-                setProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "15000")
-                setProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "15000")
-                // Set log file to app-specific directory
-                setProperty(PropertyId.Speech_LogFilename, logFile)
-            }
-            Log.d(TAG, "SpeechTranslationConfig initialized successfully, log file: $logFile, region: $currentRegion")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize SpeechTranslationConfig", e)
-            throw e
-        }
-    }
-
-    suspend fun startTranslation(
-        leftEarbudLanguage: String,
-        rightEarbudLanguage: String,
-        context: Context,
-        onAudioOutput: (String, ByteArray) -> Unit
-    ) {
-        if (!hasAudioPermission(context)) {
-            Log.w(TAG, "Audio permission not granted")
-            throw SecurityException("Audio permission not granted")
-        }
-        if (!hasAppOpsAudioPermission(context)) {
-            Log.w(TAG, "AppOps RECORD_AUDIO permission not granted")
-            throw SecurityException("AppOps RECORD_AUDIO permission not granted")
-        }
-
-        lock.lock()
-        try {
-            if (isRunning) {
-                stopTranslation()
+            // Validate API key
+            if (speechKey.isEmpty() || speechKey == "YOUR_AZURE_KEY_HERE") {
+                throw IllegalStateException("Azure Speech API key not configured. Please add it to local.properties")
             }
 
-            isRunning = true
-            setupRecognizersWithRetry(leftEarbudLanguage, rightEarbudLanguage, onAudioOutput)
-
-            coroutineScope.launch {
-                startAudioProcessing()
+            val speechConfig = SpeechTranslationConfig.fromSubscription(speechKey, speechRegion).apply {
+                speechRecognitionLanguage = inputLanguage
+                addTargetLanguage(outputLanguage1)
+                addTargetLanguage(outputLanguage2)
             }
-            Log.d(TAG, "Translation started for left: $leftEarbudLanguage, right: $rightEarbudLanguage")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start translation", e)
-            throw e
-        } finally {
-            lock.unlock()
-        }
-    }
 
-    fun stopTranslation() {
-        lock.lock()
-        try {
-            isRunning = false
-            recognizer?.stopContinuousRecognitionAsync()?.get()
-            recognizer?.close()
-            recognizer = null
-            Log.d(TAG, "Translation stopped")
-        } finally {
-            lock.unlock()
-        }
-    }
-
-    private fun hasAudioPermission(context: Context): Boolean {
-        val granted = ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        Log.d(TAG, "Audio permission granted: $granted")
-        return granted
-    }
-
-    private fun hasAppOpsAudioPermission(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
-            val mode = appOps.unsafeCheckOpNoThrow(
-                android.app.AppOpsManager.OPSTR_RECORD_AUDIO,
-                android.os.Process.myUid(),
-                context.packageName
-            )
-            val granted = mode == android.app.AppOpsManager.MODE_ALLOWED
-            Log.d(TAG, "AppOps RECORD_AUDIO permission mode: $mode, granted: $granted")
-            return granted
-        }
-        return true // AppOps not required below API 29
-    }
-
-    private suspend fun setupRecognizersWithRetry(
-        leftEarbudLanguage: String,
-        rightEarbudLanguage: String,
-        onAudioOutput: (String, ByteArray) -> Unit
-    ) {
-        var attempt = 0
-        var regions = listOf(currentRegion) + FALLBACK_REGIONS
-        var lastException: Exception? = null
-
-        while (attempt < MAX_RETRIES && regions.isNotEmpty()) {
-            try {
-                Log.d(TAG, "Attempting to setup recognizer with region: $currentRegion, attempt: ${attempt + 1}")
-                speechConfig = SpeechTranslationConfig.fromSubscription(speechKey, currentRegion).apply {
-                    speechRecognitionLanguage = leftEarbudLanguage // Default to left earbud language
-                    addTargetLanguage(leftEarbudLanguage)
-                    addTargetLanguage(rightEarbudLanguage)
-                    setProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "15000")
-                    setProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "15000")
-                    val logFile = File(context.filesDir, "speech_sdk.log").absolutePath
-                    setProperty(PropertyId.Speech_LogFilename, logFile)
-                }
-                audioConfig = AudioConfig.fromDefaultMicrophoneInput()
-                recognizer = TranslationRecognizer(speechConfig, audioConfig)
-                var lastSpeechDetectedTime = System.currentTimeMillis()
-
-                recognizer?.recognized?.addEventListener { _, event ->
-                    if (event.result.reason == ResultReason.TranslatedSpeech) {
-                        val translations = event.result.translations
-                        translations.forEach { (lang, text) ->
-                            Log.d(TAG, "Recognized translation - Language: $lang, Text: $text")
-                            if (text.isNotEmpty()) {
-                                lastSpeechDetectedTime = System.currentTimeMillis() // Update on recognized speech
-                                synthesizeSpeech(text, lang, onAudioOutput)
-                            } else {
-                                Log.w(TAG, "Empty translation text detected for language: $lang")
+            val audioConfig = AudioConfig.fromDefaultMicrophoneInput()
+            recognizer = TranslationRecognizer(speechConfig, audioConfig).apply {
+                // Handle successful recognition
+                recognized.addEventListener { _, event ->
+                    try {
+                        if (event.result.reason == com.microsoft.cognitiveservices.speech.ResultReason.TranslatedSpeech) {
+                            val translations = event.result.translations
+                            translations.forEach { (lang, text) ->
+                                if (text.isNotBlank()) {
+                                    Log.d(TAG, "Translation [$lang]: $text")
+                                    onTranslationText(lang, text)
+                                    synthesizeSpeech(text, lang, onAudioOutput, onError)
+                                }
                             }
                         }
-                    } else {
-                        Log.w(TAG, "Translation not recognized, reason: ${event.result.reason}")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in recognized event: ${e.message}", e)
+                        onError("Translation processing error: ${e.message}")
                     }
                 }
-                recognizer?.recognizing?.addEventListener { _, event ->
-                    val translations = event.result.translations
-                    translations.forEach { (lang, text) ->
-                        Log.d(TAG, "Recognizing translation - Language: $lang, Text: $text")
-                        if (text.isNotEmpty()) {
-                            lastSpeechDetectedTime = System.currentTimeMillis() // Update on recognizing speech
-                        }
-                    }
-                }
-                recognizer?.sessionStarted?.addEventListener { _, e ->
-                    Log.d(TAG, "Recognition session started, ConnectionId: ${e.sessionId}")
-                }
-                recognizer?.sessionStopped?.addEventListener { _, e ->
-                    Log.d(TAG, "Recognition session stopped, ConnectionId: ${e.sessionId}")
-                }
-                recognizer?.canceled?.addEventListener { _, e ->
-                    Log.e(TAG, "Recognition canceled: ${e.reason}, error: ${e.errorDetails}")
-                    if (e.errorDetails.contains("WS_OPEN_ERROR_UNDERLYING_IO_OPEN_FAILED")) {
-                        Log.w(TAG, "WebSocket connection failed, consider switching region or checking network")
-                    }
-                }
-                recognizer?.startContinuousRecognitionAsync()?.get()
-                Log.d(TAG, "TranslationRecognizer started with region: $currentRegion")
-                return // Success, exit retry loop
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to setup TranslationRecognizer with region: $currentRegion, attempt: ${attempt + 1}", e)
-                lastException = e
-                attempt++
-                if (attempt < MAX_RETRIES && regions.isNotEmpty()) {
-                    currentRegion = regions[1] // Move to next region
-                    regions = regions.drop(1)
-                    Log.d(TAG, "Retrying with new region: $currentRegion")
-                    delay(RETRY_DELAY_MS) // Wait before retry
+
+                // Handle errors
+                canceled.addEventListener { _, event ->
+                    val errorMsg = "Recognition canceled: ${event.reason}"
+                    Log.e(TAG, errorMsg)
+                    onError(errorMsg)
                 }
             }
-        }
-        if (lastException != null) {
-            Log.e(TAG, "All retries failed for TranslationRecognizer setup", lastException)
-            throw lastException
+
+            recognizer?.startContinuousRecognitionAsync()?.get()
+            Log.d(TAG, "Continuous recognition started")
+        } catch (e: Exception) {
+            val errorMsg = "Failed to start translation: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            onError(errorMsg)
+            throw e
         }
     }
 
-    private fun synthesizeSpeech(text: String, language: String, onAudioOutput: (String, ByteArray) -> Unit) {
-        coroutineScope.launch {
-            try {
-                val synthesisConfig = SpeechConfig.fromSubscription(speechKey, currentRegion).apply {
-                    speechSynthesisVoiceName = if (language == "fr-FR") "fr-FR-DeniseNeural" else "lt-LT-OnaNeural"
-                }
-                val synthesizer = com.microsoft.cognitiveservices.speech.SpeechSynthesizer(synthesisConfig)
-                val result = withContext(Dispatchers.IO) {
-                    synthesizer.SpeakTextAsync(text).get()
-                }
-                if (result.reason == ResultReason.SynthesizingAudioCompleted) {
-                    val earbud = if (language == "fr-FR") "left" else "right"
-                    Log.d(TAG, "Synthesis complete: audioData size=${result.audioData.size} bytes for language=$language, earbud=$earbud")
-                    onAudioOutput(earbud, result.audioData)
-                } else {
-                    val cancellationDetails = com.microsoft.cognitiveservices.speech.SpeechSynthesisCancellationDetails.fromResult(result)
-                    Log.e(TAG, "Synthesis failed: ${cancellationDetails.errorDetails}")
-                }
-                result.close()
-                synthesizer.close()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to synthesize audio for text: $text, language: $language", e)
-            }
-        }
-    }
+    private fun synthesizeSpeech(
+        text: String,
+        language: String,
+        onAudioOutput: (String, ByteArray) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        var synthesizer: SpeechSynthesizer? = null
+        var result: SpeechSynthesisResult? = null
 
-    private suspend fun startAudioProcessing() = withContext(Dispatchers.IO) {
         try {
-            Log.d(TAG, "Audio processing started")
-            var lastSpeechDetectedTime = System.currentTimeMillis()
-            while (isRunning) {
-                try {
-                    if (System.currentTimeMillis() - lastSpeechDetectedTime > SILENCE_TIMEOUT_SECONDS * 1000) {
-                        Log.w(TAG, "No speech detected for $SILENCE_TIMEOUT_SECONDS seconds, stopping processing")
-                        isRunning = false
-                        break
+            val voiceName = LanguageConfig.getVoiceForLanguage(language)
+            val speechConfig = SpeechConfig.fromSubscription(speechKey, speechRegion).apply {
+                speechSynthesisVoiceName = voiceName
+            }
+
+            synthesizer = SpeechSynthesizer(speechConfig, null)
+            result = synthesizer.SpeakTextAsync(text).get()
+
+            when (result.reason) {
+                ResultReason.SynthesizingAudioCompleted -> {
+                    val audioData = result.audioData
+                    if (audioData != null && audioData.isNotEmpty()) {
+                        Log.d(TAG, "Synthesis completed for $language, ${audioData.size} bytes")
+                        onAudioOutput(language, audioData)
+                    } else {
+                        Log.w(TAG, "Synthesis completed but no audio data")
                     }
-                    delay(10) // Small delay to prevent tight loop
-                } catch (e: Exception) {
-                    Log.e(TAG, "Audio processing error", e)
-                    break
+                }
+                ResultReason.Canceled -> {
+                    val errorMsg = "Synthesis canceled for $language"
+                    Log.e(TAG, errorMsg)
+                    onError(errorMsg)
+                }
+                else -> {
+                    val errorMsg = "Synthesis failed: ${result.reason}"
+                    Log.e(TAG, errorMsg)
+                    onError(errorMsg)
                 }
             }
+        } catch (e: Exception) {
+            val errorMsg = "Synthesis error for $language: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            onError(errorMsg)
         } finally {
-            recognizer?.stopContinuousRecognitionAsync()?.get()
-            Log.d(TAG, "Audio processing stopped")
+            // Ensure resources are always cleaned up
+            try {
+                result?.close()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error closing result: ${e.message}")
+            }
+            try {
+                synthesizer?.close()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error closing synthesizer: ${e.message}")
+            }
         }
     }
 
-    fun testEarbudChannel(earbud: String, context: Context) {
-        Log.d(TAG, "Testing $earbud earbud")
-        BluetoothAudioService().testEarbudChannel(earbud, context)
+    suspend fun stopTranslation() = withContext(Dispatchers.IO) {
+        try {
+            recognizer?.stopContinuousRecognitionAsync()?.get()
+            Log.d(TAG, "Recognition stopped")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping recognition: ${e.message}", e)
+        } finally {
+            try {
+                recognizer?.close()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error closing recognizer: ${e.message}")
+            }
+            recognizer = null
+        }
     }
 }
