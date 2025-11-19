@@ -3,6 +3,7 @@ package com.knowbody.interpret.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.knowbody.interpret.model.LanguageConfig
 import com.knowbody.interpret.service.AzureSpeechService
 import com.knowbody.interpret.service.BluetoothAudioService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -32,8 +33,10 @@ class InterpreterViewModel @Inject constructor(
     private val _lastTranslation = MutableStateFlow<Pair<String, String>?>(null)
     val lastTranslation: StateFlow<Pair<String, String>?> = _lastTranslation.asStateFlow()
 
+    private val _detectedLanguage = MutableStateFlow<String?>(null)
+    val detectedLanguage: StateFlow<String?> = _detectedLanguage.asStateFlow()
+
     fun startTranslation(
-        inputLanguage: String,
         outputLanguage1: String,
         outputLanguage2: String
     ) {
@@ -43,24 +46,33 @@ class InterpreterViewModel @Inject constructor(
         }
 
         // Validate inputs
-        if (inputLanguage.isBlank() || outputLanguage1.isBlank() || outputLanguage2.isBlank()) {
-            _error.value = "Please select all language fields"
+        if (outputLanguage1.isBlank() || outputLanguage2.isBlank()) {
+            _error.value = "Please select both output languages"
+            return
+        }
+
+        // Check if both languages are the same
+        if (outputLanguage1 == outputLanguage2) {
+            _error.value = "Output languages must be different"
             return
         }
 
         viewModelScope.launch {
             try {
-                _status.value = "Starting translation..."
+                _status.value = "Starting translation with auto language detection..."
                 _error.value = null
                 _isTranslating.value = true
+                _detectedLanguage.value = null
 
-                Log.d(TAG, "Starting translation: $inputLanguage -> L:$outputLanguage1, R:$outputLanguage2")
+                val lang1Name = LanguageConfig.availableLanguages.find { it.code == outputLanguage1 }?.displayName ?: outputLanguage1
+                val lang2Name = LanguageConfig.availableLanguages.find { it.code == outputLanguage2 }?.displayName ?: outputLanguage2
+
+                Log.d(TAG, "Starting auto-detection for languages: L:$outputLanguage1, R:$outputLanguage2")
 
                 // Configure audio routing BEFORE starting translation
                 bluetoothService.setLanguageRouting(outputLanguage1, outputLanguage2)
 
                 speechService.startContinuousTranslation(
-                    inputLanguage = inputLanguage,
                     outputLanguage1 = outputLanguage1,
                     outputLanguage2 = outputLanguage2,
                     onAudioOutput = { language, audio ->
@@ -78,11 +90,16 @@ class InterpreterViewModel @Inject constructor(
                     },
                     onTranslationText = { language, text ->
                         _lastTranslation.value = Pair(language, text)
+                    },
+                    onLanguageDetected = { detectedLang ->
+                        _detectedLanguage.value = detectedLang
+                        val detectedName = LanguageConfig.availableLanguages.find { it.code == detectedLang }?.displayName ?: detectedLang
+                        Log.d(TAG, "Language detected: $detectedLang ($detectedName)")
                     }
                 )
 
                 val audioDevice = bluetoothService.getAudioDeviceInfo()
-                _status.value = "Translating... (Left: $outputLanguage1, Right: $outputLanguage2)\nOutput: $audioDevice"
+                _status.value = "Listening... Auto-detecting $lang1Name or $lang2Name\nLeft: $lang1Name | Right: $lang2Name\nOutput: $audioDevice"
 
             } catch (e: Exception) {
                 val errorMsg = e.message ?: "Unknown error"
@@ -101,6 +118,7 @@ class InterpreterViewModel @Inject constructor(
                 speechService.stopTranslation()
                 _status.value = "Translation stopped"
                 _lastTranslation.value = null
+                _detectedLanguage.value = null
             } catch (e: Exception) {
                 Log.e(TAG, "Error stopping translation", e)
                 _error.value = "Error stopping: ${e.message}"

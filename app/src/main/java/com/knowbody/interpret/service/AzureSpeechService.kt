@@ -2,6 +2,7 @@ package com.knowbody.interpret.service
 
 import android.util.Log
 import com.knowbody.interpret.model.LanguageConfig
+import com.microsoft.cognitiveservices.speech.AutoDetectSourceLanguageConfig
 import com.microsoft.cognitiveservices.speech.ResultReason
 import com.microsoft.cognitiveservices.speech.SpeechConfig
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisResult
@@ -12,6 +13,7 @@ import com.microsoft.cognitiveservices.speech.translation.TranslationRecognizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import kotlin.text.get
 
 class AzureSpeechService @Inject constructor(
     private val speechKey: String,
@@ -21,12 +23,12 @@ class AzureSpeechService @Inject constructor(
     private val TAG = "AzureSpeechService"
 
     suspend fun startContinuousTranslation(
-        inputLanguage: String,
         outputLanguage1: String,
         outputLanguage2: String,
         onAudioOutput: (String, ByteArray) -> Unit,
         onError: (String) -> Unit,
-        onTranslationText: (String, String) -> Unit = { _, _ -> }
+        onTranslationText: (String, String) -> Unit = { _, _ -> },
+        onLanguageDetected: (String) -> Unit = { }
     ) = withContext(Dispatchers.IO) {
         try {
             // Validate API key
@@ -34,43 +36,92 @@ class AzureSpeechService @Inject constructor(
                 throw IllegalStateException("Azure Speech API key not configured. Please add it to local.properties")
             }
 
-            val speechConfig = SpeechTranslationConfig.fromSubscription(speechKey, speechRegion).apply {
-                speechRecognitionLanguage = inputLanguage
-                addTargetLanguage(outputLanguage1)
-                addTargetLanguage(outputLanguage2)
-            }
+            // Create language list from output languages for auto-detection
+            val sourceLanguages = listOf(outputLanguage1, outputLanguage2).distinct()
+            Log.d(TAG, "Auto-detecting languages: $sourceLanguages")
+
+            val speechConfig =
+                SpeechTranslationConfig.fromSubscription(speechKey, speechRegion).apply {
+                    // Don't set speechRecognitionLanguage - we'll use auto-detection instead
+                    addTargetLanguage(outputLanguage1)
+                    addTargetLanguage(outputLanguage2)
+                }
 
             val audioConfig = AudioConfig.fromDefaultMicrophoneInput()
-            recognizer = TranslationRecognizer(speechConfig, audioConfig).apply {
-                // Handle successful recognition
-                recognized.addEventListener { _, event ->
-                    try {
-                        if (event.result.reason == com.microsoft.cognitiveservices.speech.ResultReason.TranslatedSpeech) {
-                            val translations = event.result.translations
-                            translations.forEach { (lang, text) ->
-                                if (text.isNotBlank()) {
-                                    Log.d(TAG, "Translation [$lang]: $text")
-                                    onTranslationText(lang, text)
-                                    synthesizeSpeech(text, lang, onAudioOutput, onError)
+
+            // Create recognizer with auto-detection
+            fun createRecognizer(): TranslationRecognizer {
+                val autoDetectConfig = AutoDetectSourceLanguageConfig.fromLanguages(sourceLanguages)
+                return TranslationRecognizer(speechConfig, autoDetectConfig, audioConfig).apply {
+                    // Handle successful recognition
+                    recognized.addEventListener { _, event ->
+                        try {
+                            if (event.result.reason == com.microsoft.cognitiveservices.speech.ResultReason.TranslatedSpeech) {
+                                // Get detected language
+                                val detectedLanguage = event.result.properties.getProperty(
+                                    com.microsoft.cognitiveservices.speech.PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult
+                                )
+
+                                if (detectedLanguage != null) {
+                                    Log.d(TAG, "Detected language: $detectedLanguage")
+                                    onLanguageDetected(detectedLanguage)
                                 }
+
+                                val originalText = event.result.text
+                                if (originalText.isNotBlank()) {
+                                    Log.d(TAG, "Original text [$detectedLanguage]: $originalText")
+                                }
+
+                                val translations = event.result.translations
+                                translations.forEach { (lang, text) ->
+                                        Log.d(TAG, "Translation [$lang]: $text")
+                                        onTranslationText(lang, text)
+                                        synthesizeSpeech(text, lang, onAudioOutput, onError)
+                                }
+
+                                try {
+                                    recognizer?.stopContinuousRecognitionAsync()?.get()
+                                    recognizer?.close()
+                                    recognizer = createRecognizer() // recreate with fresh auto-detect config
+                                    recognizer?.startContinuousRecognitionAsync()?.get()
+                                } catch (e: Exception) {
+                                    Log.e(
+                                        TAG,
+                                        "Error restarting recognizer for re-detection: ${e.message}",
+                                        e
+                                    )
+                                }
+
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error in recognized event: ${e.message}", e)
+                            onError("Translation processing error: ${e.message}")
+                        }
+                    }
+
+                    // Handle recognition events (for real-time feedback)
+                    recognizing.addEventListener { _, event ->
+                        if (event.result.reason == com.microsoft.cognitiveservices.speech.ResultReason.TranslatingSpeech) {
+                            val detectedLanguage = event.result.properties.getProperty(
+                                com.microsoft.cognitiveservices.speech.PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult
+                            )
+                            if (detectedLanguage != null) {
+                                onLanguageDetected(detectedLanguage)
                             }
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in recognized event: ${e.message}", e)
-                        onError("Translation processing error: ${e.message}")
+                    }
+
+                    // Handle errors
+                    canceled.addEventListener { _, event ->
+                        val errorMsg = "Recognition canceled: ${event.reason}"
+                        Log.e(TAG, errorMsg)
+                        onError(errorMsg)
                     }
                 }
-
-                // Handle errors
-                canceled.addEventListener { _, event ->
-                    val errorMsg = "Recognition canceled: ${event.reason}"
-                    Log.e(TAG, errorMsg)
-                    onError(errorMsg)
-                }
             }
-
+            recognizer = createRecognizer()
             recognizer?.startContinuousRecognitionAsync()?.get()
-            Log.d(TAG, "Continuous recognition started")
+            Log.d(TAG, "Continuous recognition started with auto language detection")
         } catch (e: Exception) {
             val errorMsg = "Failed to start translation: ${e.message}"
             Log.e(TAG, errorMsg, e)
@@ -78,7 +129,6 @@ class AzureSpeechService @Inject constructor(
             throw e
         }
     }
-
     private fun synthesizeSpeech(
         text: String,
         language: String,
