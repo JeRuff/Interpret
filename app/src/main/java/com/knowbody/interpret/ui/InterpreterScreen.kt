@@ -187,18 +187,6 @@ fun InterpreterScreen(viewModel: InterpreterViewModel = hiltViewModel()) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(stringResource(R.string.status_label), style = MaterialTheme.typography.labelLarge)
                 Text(status, style = MaterialTheme.typography.bodyMedium)
-
-                lastTranslation?.let { (lang, text) ->
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Divider()
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(stringResource(R.string.last_translation_label), style = MaterialTheme.typography.labelLarge)
-                    Text("[$lang]",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(text, style = MaterialTheme.typography.bodyMedium)
-                }
             }
         }
 

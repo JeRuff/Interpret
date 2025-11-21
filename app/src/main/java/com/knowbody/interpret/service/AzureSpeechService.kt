@@ -22,6 +22,8 @@ class AzureSpeechService @Inject constructor(
     private var recognizer: TranslationRecognizer? = null
     private val TAG = "AzureSpeechService"
 
+    private val synthesizers = mutableMapOf<String, SpeechSynthesizer>()
+
     suspend fun startContinuousTranslation(
         outputLanguage1: String,
         outputLanguage2: String,
@@ -45,6 +47,8 @@ class AzureSpeechService @Inject constructor(
                     // Don't set speechRecognitionLanguage - we'll use auto-detection instead
                     addTargetLanguage(outputLanguage1)
                     addTargetLanguage(outputLanguage2)
+                    // Set silence timeout to 1 second (1000ms) for faster segmentation
+                    setProperty(com.microsoft.cognitiveservices.speech.PropertyId.Speech_SegmentationSilenceTimeoutMs, "1000")
                 }
 
             val audioConfig = AudioConfig.fromDefaultMicrophoneInput()
@@ -139,12 +143,15 @@ class AzureSpeechService @Inject constructor(
         var result: SpeechSynthesisResult? = null
 
         try {
-            val voiceName = LanguageConfig.getVoiceForLanguage(language)
-            val speechConfig = SpeechConfig.fromSubscription(speechKey, speechRegion).apply {
-                speechSynthesisVoiceName = voiceName
+            // Reuse existing synthesizer or create a new one
+            synthesizer = synthesizers.getOrPut(language) {
+                val voiceName = LanguageConfig.getVoiceForLanguage(language)
+                val speechConfig = SpeechConfig.fromSubscription(speechKey, speechRegion).apply {
+                    speechSynthesisVoiceName = voiceName
+                }
+                SpeechSynthesizer(speechConfig, null)
             }
 
-            synthesizer = SpeechSynthesizer(speechConfig, null)
             result = synthesizer.SpeakTextAsync(text).get()
 
             when (result.reason) {
@@ -173,16 +180,11 @@ class AzureSpeechService @Inject constructor(
             Log.e(TAG, errorMsg, e)
             onError(errorMsg)
         } finally {
-            // Ensure resources are always cleaned up
+            // Do NOT close the synthesizer here, as we are caching it
             try {
                 result?.close()
             } catch (e: Exception) {
                 Log.e(TAG, "Error closing result: ${e.message}")
-            }
-            try {
-                synthesizer?.close()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error closing synthesizer: ${e.message}")
             }
         }
     }
@@ -200,6 +202,16 @@ class AzureSpeechService @Inject constructor(
                 Log.e(TAG, "Error closing recognizer: ${e.message}")
             }
             recognizer = null
+            
+            // Cleanup cached synthesizers
+            synthesizers.values.forEach { 
+                try {
+                    it.close()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error closing cached synthesizer: ${e.message}")
+                }
+            }
+            synthesizers.clear()
         }
     }
 }
