@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">Interpret</string>
+    <string name="app_title">Interprète en Temps Réel</string>
+    <string name="auto_language_detection">Détection Automatique de la Langue</string>
+    <string name="speaking_in">Parle en :</string>
+    <string name="left_earbud_language">Langue Écouteur Gauche</string>
+    <string name="right_earbud_language">Langue Écouteur Droit</string>
+    <string name="start_translation">Démarrer la Traduction</string>
+    <string name="stop_translation">Arrêter la Traduction</string>
+    <string name="status_label">Statut :</string>
+    <string name="last_translation_label">Dernière traduction :</string>
+    <string name="error_label">Erreur :</string>
+    <string name="dismiss">Ignorer</string>
+    <string name="how_it_works_title">🎧 Comment ça marche</string>
+    <string name="how_it_works_description">• Parlez dans l\'une des langues sélectionnées\n• L\'application détecte automatiquement la langue\n• Traduit vers l\'autre langue\n• Écouteur Gauche : Langue 1\n• Écouteur Droit : Langue 2</string>
+</resources>

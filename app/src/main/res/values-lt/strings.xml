@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">Interpret</string>
+    <string name="app_title">Realaus Laiko Vertėjas</string>
+    <string name="auto_language_detection">Automatinis Kalbos Aptikimas</string>
+    <string name="speaking_in">Kalbama:</string>
+    <string name="left_earbud_language">Kairės Ausinės Kalba</string>
+    <string name="right_earbud_language">Dešinės Ausinės Kalba</string>
+    <string name="start_translation">Pradėti Vertimą</string>
+    <string name="stop_translation">Sustabdyti Vertimą</string>
+    <string name="status_label">Būsena:</string>
+    <string name="last_translation_label">Paskutinis vertimas:</string>
+    <string name="error_label">Klaida:</string>
+    <string name="dismiss">Atmesti</string>
+    <string name="how_it_works_title">🎧 Kaip tai veikia</string>
+    <string name="how_it_works_description">• Kalbėkite bet kuria pasirinkta kalba\n• Programėlė automatiškai nustato kalbą\n• Išverčia į kitą kalbą\n• Kairė Ausinė: 1 Kalba\n• Dešinė Ausinė: 2 Kalba</string>
+</resources>

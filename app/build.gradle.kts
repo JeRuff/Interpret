@@ -40,6 +40,38 @@ android {
         buildConfigField("String", "SPEECH_REGION", "\"${localProperties.getProperty("azure.speech.region") ?: "northeurope"}\"")
     }
 
+    signingConfigs {
+        // Create a debug signing config with v1 and v2 enabled
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+
+            // Enable both signature schemes
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = true
+        }
+
+        // Optional: Create release signing config
+        create("release") {
+            // If you have a release keystore, configure it here
+            // For now, we'll use debug keystore for testing
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = true
+        }
+    }
+
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -47,6 +79,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

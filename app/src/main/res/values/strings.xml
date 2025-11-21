@@ -1,3 +1,16 @@
 <resources>
     <string name="app_name">Interpret</string>
+    <string name="app_title">Real-Time Interpreter</string>
+    <string name="auto_language_detection">Auto Language Detection</string>
+    <string name="speaking_in">Speaking in:</string>
+    <string name="left_earbud_language">Left Earbud Language</string>
+    <string name="right_earbud_language">Right Earbud Language</string>
+    <string name="start_translation">Start Translation</string>
+    <string name="stop_translation">Stop Translation</string>
+    <string name="status_label">Status:</string>
+    <string name="last_translation_label">Last translation:</string>
+    <string name="error_label">Error:</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="how_it_works_title">🎧 How It Works</string>
+    <string name="how_it_works_description">• Speak in either selected language\n• App automatically detects which language you\'re speaking\n• Translates to the other language\n• Left Earbud: Language 1\n• Right Earbud: Language 2</string>
 </resources>

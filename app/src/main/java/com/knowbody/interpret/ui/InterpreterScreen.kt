@@ -10,6 +10,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.knowbody.interpret.model.LanguageConfig
 import com.knowbody.interpret.viewmodel.InterpreterViewModel
+import androidx.compose.ui.res.stringResource
+import com.knowbody.interpret.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,9 +37,9 @@ fun InterpreterScreen(viewModel: InterpreterViewModel = hiltViewModel()) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("Real-Time Interpreter", style = MaterialTheme.typography.headlineMedium)
+        Text(stringResource(R.string.app_title), style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Auto Language Detection",
+            stringResource(R.string.auto_language_detection),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary
         )
@@ -61,7 +63,7 @@ fun InterpreterScreen(viewModel: InterpreterViewModel = hiltViewModel()) {
                     Text("🎤 ", style = MaterialTheme.typography.titleLarge)
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Speaking in:",
+                            stringResource(R.string.speaking_in),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -85,7 +87,7 @@ fun InterpreterScreen(viewModel: InterpreterViewModel = hiltViewModel()) {
                 value = languages.find { it.code == outputLanguage1 }?.displayName ?: "",
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Left Earbud Language") },
+                label = { Text(stringResource(R.string.left_earbud_language)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = output1Expanded) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -120,7 +122,7 @@ fun InterpreterScreen(viewModel: InterpreterViewModel = hiltViewModel()) {
                 value = languages.find { it.code == outputLanguage2 }?.displayName ?: "",
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Right Earbud Language") },
+                label = { Text(stringResource(R.string.right_earbud_language)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = output2Expanded) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -157,7 +159,7 @@ fun InterpreterScreen(viewModel: InterpreterViewModel = hiltViewModel()) {
             modifier = Modifier.fillMaxWidth(),
             enabled = !isTranslating
         ) {
-            Text("Start Translation")
+            Text(stringResource(R.string.start_translation))
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -170,7 +172,7 @@ fun InterpreterScreen(viewModel: InterpreterViewModel = hiltViewModel()) {
                 containerColor = MaterialTheme.colorScheme.error
             )
         ) {
-            Text("Stop Translation")
+            Text(stringResource(R.string.stop_translation))
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -183,14 +185,14 @@ fun InterpreterScreen(viewModel: InterpreterViewModel = hiltViewModel()) {
             )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Status:", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.status_label), style = MaterialTheme.typography.labelLarge)
                 Text(status, style = MaterialTheme.typography.bodyMedium)
 
                 lastTranslation?.let { (lang, text) ->
                     Spacer(modifier = Modifier.height(12.dp))
                     Divider()
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Last translation:", style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(R.string.last_translation_label), style = MaterialTheme.typography.labelLarge)
                     Text("[$lang]",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary
@@ -218,7 +220,7 @@ fun InterpreterScreen(viewModel: InterpreterViewModel = hiltViewModel()) {
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Error:",
+                            stringResource(R.string.error_label),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -229,7 +231,7 @@ fun InterpreterScreen(viewModel: InterpreterViewModel = hiltViewModel()) {
                         )
                     }
                     TextButton(onClick = { viewModel.clearError() }) {
-                        Text("Dismiss")
+                        Text(stringResource(R.string.dismiss))
                     }
                 }
             }
@@ -246,13 +248,13 @@ fun InterpreterScreen(viewModel: InterpreterViewModel = hiltViewModel()) {
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(
-                    "🎧 How It Works",
+                    stringResource(R.string.how_it_works_title),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "• Speak in either selected language\n• App automatically detects which language you're speaking\n• Translates to the other language\n• Left Earbud: Language 1\n• Right Earbud: Language 2",
+                    stringResource(R.string.how_it_works_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
